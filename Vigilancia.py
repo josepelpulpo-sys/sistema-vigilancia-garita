@@ -19,8 +19,8 @@ st.set_page_config(
 # USUARIOS AUTORIZADOS (ID / CONTRASEÑA / NOMBRE)
 # -------------------------------------------------------------------
 USUARIOS_AUTORIZADOS = {
-    "vigilante1": {"password": "eickyñoje", "nombre": "Erick"},
-    "vigilante2": {"password": "protex2026", "nombre": "Control"},
+    "Erick": {"password": "eickyñoje", "nombre": "Erick"},
+    "Protexviglancia": {"password": "protex2026", "nombre": "supervision"},
     "admin": {"password": "Josepkiri9651535447", "nombre": "Admin"}
 }
 

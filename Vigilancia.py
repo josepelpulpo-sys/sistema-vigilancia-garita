@@ -13,6 +13,32 @@ st.set_page_config(
     page_icon="🚛"
 )
 
+# Definir la contraseña de acceso (puedes cambiarla aquí o ponerla en Secrets)
+PASSWORD_CORRECTA = "eickyñoje"
+
+# Manejo de estado de sesión para el Login
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+
+def check_password():
+    st.title("🔐 Acceso al Sistema de Vigilancia")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        pwd_input = st.text_input("Ingrese la contraseña de acceso:", type="password")
+        if st.button("Iniciar Sesión", use_container_width=True):
+            if pwd_input == PASSWORD_CORRECTA:
+                st.session_state["autenticado"] = True
+                st.rerun()
+            else:
+                st.error("❌ Contraseña incorrecta. Intente nuevamente.")
+
+# Si no está autenticado, mostrar formulario de login y detener ejecución
+if not st.session_state["autenticado"]:
+    check_password()
+    st.stop()
+
+# --- A PARTIR DE AQUÍ SOLO ACCEDEN USUARIOS AUTENTICADOS ---
+
 # Conexión a la base de datos PostgreSQL de Supabase vía SQLAlchemy
 def get_engine():
     db_url = st.secrets["postgres"]["url"]
@@ -54,7 +80,15 @@ try:
 except Exception as e:
     st.error(f"Error al conectar con la base de datos de Supabase: {e}")
 
-st.title("🚛 Control de Entrada y Salida - Vigilancia")
+# Encabezado principal y Botón de Cerrar Sesión
+col_header, col_logout = st.columns([8, 2])
+with col_header:
+    st.title("🚛 Control de Entrada y Salida - Vigilancia")
+with col_logout:
+    st.write("")
+    if st.button("🚪 Cerrar Sesión"):
+        st.session_state["autenticado"] = False
+        st.rerun()
 
 # Menú lateral
 opcion = st.sidebar.radio("Navegación", ["Registrar Movimiento", "Inventario y Stock", "Historial e Informes"])

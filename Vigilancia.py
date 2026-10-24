@@ -19,8 +19,8 @@ st.set_page_config(
 # USUARIOS AUTORIZADOS (ID / CONTRASEÑA / NOMBRE)
 # -------------------------------------------------------------------
 USUARIOS_AUTORIZADOS = {
-    "Erick": {"password": "eickyñoje", "nombre": "Erick"},
-    "Protexviglancia": {"password": "protex2026", "nombre": "supervision"},
+    "erick": {"password": "eickyñoje", "nombre": "Erick"},
+    "control": {"password": "protex2026", "nombre": "Control"},
     "admin": {"password": "Josepkiri9651535447", "nombre": "Admin"}
 }
 
@@ -102,8 +102,9 @@ if not st.session_state["vigilante"]:
             submit_login = st.form_submit_button("Ingresar al Sistema", use_container_width=True)
 
             if submit_login:
-                if user_input in USUARIOS_AUTORIZADOS and USUARIOS_AUTORIZADOS[user_input]["password"] == pass_input:
-                    st.session_state["vigilante"] = USUARIOS_AUTORIZADOS[user_input]["nombre"]
+                user_clean = user_input.lower()
+                if user_clean in USUARIOS_AUTORIZADOS and USUARIOS_AUTORIZADOS[user_clean]["password"] == pass_input:
+                    st.session_state["vigilante"] = USUARIOS_AUTORIZADOS[user_clean]["nombre"]
                     st.success(f"Bienvenido/a, **{st.session_state['vigilante']}**.")
                     st.rerun()
                 else:
@@ -208,10 +209,11 @@ st.title("🚛 Control de Portería - Bitácora Completa de Movimientos")
 st.caption(f"Vigilante en turno: **{st.session_state['vigilante']}**")
 st.markdown("---")
 
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "📥 1. Registro de Portería (Dejar / Recoger)",
     "📦 2. Stock Actual en Almacén",
-    "📋 3. Historial de Todos los Movimientos"
+    "📋 3. Historial de Todos los Movimientos",
+    "✏️ 4. Modificar Fecha de Registro"
 ])
 
 # -------------------------------------------------------------------
@@ -514,3 +516,63 @@ with tab3:
         st.dataframe(df_todo, use_container_width=True)
     else:
         st.write("Aún no hay movimientos registrados en la bitácora.")
+
+# -------------------------------------------------------------------
+# PESTAÑA 4: MODIFICAR FECHA DE REGISTRO
+# -------------------------------------------------------------------
+with tab4:
+    st.subheader("✏️ Modificar la Fecha de un Registro Existente")
+    st.info("Selecciona el movimiento que deseas corregir y cambia únicamente su fecha sin perder ningún dato.")
+
+    engine = get_engine()
+    df_modificar = pd.read_sql_query("""
+        SELECT id, fecha_evento, hora_evento, tipo_operacion, num_guia_entrada, cliente, tipo_tela, chofer
+        FROM historial_movimientos
+        ORDER BY id DESC
+    """, engine)
+
+    if not df_modificar.empty:
+        # Crear un diccionario para mostrar opciones claras al usuario
+        opciones_movs = {
+            f"ID: {row['id']} | Fecha: {row['fecha_evento']} | Op: {row['tipo_operacion']} | Guía: {row['num_guia_entrada']} | Cliente: {row['cliente']}": row['id']
+            for _, row in df_modificar.iterrows()
+        }
+
+        mov_seleccionado_str = st.selectbox("Seleccione el registro a modificar:", list(opciones_movs.keys()))
+        id_a_modificar = opciones_movs[mov_seleccionado_str]
+
+        # Obtener la fecha actual de ese registro
+        registro_actual = df_modificar[df_modificar["id"] == id_a_modificar].iloc[0]
+        fecha_actual_str = str(registro_actual["fecha_evento"])
+
+        try:
+            default_date = datetime.datetime.strptime(fecha_actual_str, "%Y-%m-%d").date()
+        except Exception:
+            default_date = datetime.date.today()
+
+        nueva_fecha = st.date_input("Seleccione la nueva fecha para este registro:", value=default_date)
+
+        if st.button("💾 Actualizar Fecha del Registro", type="primary"):
+            nueva_fecha_str = nueva_fecha.strftime("%Y-%m-%d")
+            
+            with engine.begin() as conn:
+                # 1. Actualizar en el historial de movimientos
+                conn.execute(text("""
+                    UPDATE historial_movimientos
+                    SET fecha_evento = :nueva_fecha
+                    WHERE id = :id_mov
+                """), {"nueva_fecha": nueva_fecha_str, "id_mov": int(id_a_modificar)})
+
+                # 2. Si es un registro de ingreso, también podemos actualizar la fecha en el stock de planta asociado a esa guía
+                guia_asociada = registro_actual["num_guia_entrada"]
+                if guia_asociada and guia_asociada != "-":
+                    conn.execute(text("""
+                        UPDATE stock_telas_planta
+                        SET fecha_ingreso = :nueva_fecha
+                        WHERE num_guia_entrada = :guia
+                    """), {"nueva_fecha": nueva_fecha_str, "guia": guia_asociada})
+
+            st.success(f"✅ ¡Fecha actualizada con éxito a **{nueva_fecha_str}** para el registro ID {id_a_modificar}!")
+            st.rerun()
+    else:
+        st.info("No hay registros en el historial para modificar.")

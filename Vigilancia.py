@@ -220,18 +220,22 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # PESTAÑA 1: REGISTRO DE MOVIMIENTO
 # -------------------------------------------------------------------
 with tab1:
-    st.subheader("1. Datos Completos del Vehículo, Chófer y Transporte")
+    st.subheader("1. Datos del Vehículo, Chófer y Fecha del Reporte")
     
-    col_v1, col_v2, col_v3, col_v4, col_v5 = st.columns([2.5, 2, 2.5, 2, 3])
+    col_v1, col_v2, col_v3, col_v4 = st.columns(4)
     with col_v1:
         chofer_nom = st.text_input("Nombre del Chófer *").strip()
     with col_v2:
-        dni_chofer_in = st.text_input("DNI / Documento del Chófer *").strip()
+        dni_chofer_in = st.text_input("DNI / Documento *").strip()
     with col_v3:
-        empresa_trans = st.text_input("Empresa de Transporte / Tercero *", placeholder="Ej. Servitrans").strip()
+        empresa_trans = st.text_input("Empresa Transporte *", placeholder="Ej. Servitrans").strip()
     with col_v4:
-        placa_veh = st.text_input("Placa del Carro/Camión *").upper().strip()
+        placa_veh = st.text_input("Placa del Vehículo *").upper().strip()
+
+    col_v5, col_v6 = st.columns(2)
     with col_v5:
+        fecha_reporte = st.date_input("📅 Fecha del Reporte / Registro *", value=datetime.date.today())
+    with col_v6:
         operacion = st.radio("¿Qué acción realiza el vehículo? *", ["Dejar Tela (Ingreso a Planta)", "Recoger Tela (Despacho de Planta)"])
 
     st.markdown("---")
@@ -287,7 +291,7 @@ with tab1:
             elif not st.session_state["telas_dejar"]:
                 st.error("⚠️ Debe agregar al menos un tipo de tela a la lista.")
             else:
-                fecha_f = datetime.datetime.now().strftime("%Y-%m-%d")
+                fecha_f = fecha_reporte.strftime("%Y-%m-%d")
                 hora_f = datetime.datetime.now().strftime("%H:%M:%S")
 
                 engine = get_engine()
@@ -318,7 +322,7 @@ with tab1:
                             "dni": dni_chofer_in, "trans": empresa_trans, "placa": placa_veh
                         })
 
-                st.success(f"✅ Ingreso registrado con éxito. Guía **{num_guia_e}** almacenada en historial y planta.")
+                st.success(f"✅ Ingreso registrado con éxito para la fecha **{fecha_f}**. Guía **{num_guia_e}** almacenada.")
                 st.session_state["telas_dejar"] = []
                 st.rerun()
 
@@ -406,7 +410,7 @@ with tab1:
                 elif not datos_salida_telas:
                     st.error("⚠️ Ha quitado todas las telas. Seleccione al menos una tela para despachar.")
                 else:
-                    fecha_f = datetime.datetime.now().strftime("%Y-%m-%d")
+                    fecha_f = fecha_reporte.strftime("%Y-%m-%d")
                     hora_f = datetime.datetime.now().strftime("%H:%M:%S")
 
                     engine = get_engine()
@@ -440,7 +444,7 @@ with tab1:
                     if "guia_actual_sel" in st.session_state:
                         del st.session_state["guia_actual_sel"]
 
-                    st.success("✅ Nuevo movimiento registrado en el historial. Saldo en planta actualizado.")
+                    st.success(f"✅ Despacho registrado con éxito para la fecha **{fecha_f}**. Saldo en planta actualizado.")
                     st.rerun()
         else:
             st.info("No hay telas almacenadas en planta actualmente para retirar.")
@@ -532,7 +536,6 @@ with tab4:
     """, engine)
 
     if not df_modificar.empty:
-        # Crear un diccionario para mostrar opciones claras al usuario
         opciones_movs = {
             f"ID: {row['id']} | Fecha: {row['fecha_evento']} | Op: {row['tipo_operacion']} | Guía: {row['num_guia_entrada']} | Cliente: {row['cliente']}": row['id']
             for _, row in df_modificar.iterrows()
@@ -541,7 +544,6 @@ with tab4:
         mov_seleccionado_str = st.selectbox("Seleccione el registro a modificar:", list(opciones_movs.keys()))
         id_a_modificar = opciones_movs[mov_seleccionado_str]
 
-        # Obtener la fecha actual de ese registro
         registro_actual = df_modificar[df_modificar["id"] == id_a_modificar].iloc[0]
         fecha_actual_str = str(registro_actual["fecha_evento"])
 
@@ -556,14 +558,12 @@ with tab4:
             nueva_fecha_str = nueva_fecha.strftime("%Y-%m-%d")
             
             with engine.begin() as conn:
-                # 1. Actualizar en el historial de movimientos
                 conn.execute(text("""
                     UPDATE historial_movimientos
                     SET fecha_evento = :nueva_fecha
                     WHERE id = :id_mov
                 """), {"nueva_fecha": nueva_fecha_str, "id_mov": int(id_a_modificar)})
 
-                # 2. Si es un registro de ingreso, también podemos actualizar la fecha en el stock de planta asociado a esa guía
                 guia_asociada = registro_actual["num_guia_entrada"]
                 if guia_asociada and guia_asociada != "-":
                     conn.execute(text("""

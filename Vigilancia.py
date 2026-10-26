@@ -213,7 +213,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "📥 1. Registro de Portería (Dejar / Recoger)",
     "📦 2. Stock Actual en Almacén",
     "📋 3. Historial de Todos los Movimientos",
-    "✏️ 4. Modificar Fecha de Registro"
+    "✏️ 4. Modificar Registro Completo"
 ])
 
 # -------------------------------------------------------------------
@@ -522,57 +522,102 @@ with tab3:
         st.write("Aún no hay movimientos registrados en la bitácora.")
 
 # -------------------------------------------------------------------
-# PESTAÑA 4: MODIFICAR FECHA DE REGISTRO
+# PESTAÑA 4: MODIFICAR REGISTRO COMPLETO
 # -------------------------------------------------------------------
 with tab4:
-    st.subheader("✏️ Modificar la Fecha de un Registro Existente")
-    st.info("Selecciona el movimiento que deseas corregir y cambia únicamente su fecha sin perder ningún dato.")
+    st.subheader("✏️ Modificar un Registro Completo del Historial")
+    st.info("Selecciona el movimiento que deseas corregir. Puedes modificar cualquier campo (fecha, chófer, placas, guías, cliente, tipo de tela, rollos y peso).")
 
     engine = get_engine()
     df_modificar = pd.read_sql_query("""
-        SELECT id, fecha_evento, hora_evento, tipo_operacion, num_guia_entrada, cliente, tipo_tela, chofer
+        SELECT id, fecha_evento, hora_evento, tipo_operacion, num_guia_entrada, num_guia_salida, 
+               num_partida, cliente, tipo_tela, rollos_movimiento, peso_kg_movimiento, 
+               chofer, dni_chofer, empresa_transporte, placa
         FROM historial_movimientos
         ORDER BY id DESC
     """, engine)
 
     if not df_modificar.empty:
         opciones_movs = {
-            f"ID: {row['id']} | Fecha: {row['fecha_evento']} | Op: {row['tipo_operacion']} | Guía: {row['num_guia_entrada']} | Cliente: {row['cliente']}": row['id']
+            f"ID: {row['id']} | Fecha: {row['fecha_evento']} | Op: {row['tipo_operacion']} | Guía Ent: {row['num_guia_entrada']} | Cliente: {row['cliente']} | Tela: {row['tipo_tela']}": row['id']
             for _, row in df_modificar.iterrows()
         }
 
-        mov_seleccionado_str = st.selectbox("Seleccione el registro a modificar:", list(opciones_movs.keys()))
+        mov_seleccionado_str = st.selectbox("Seleccione el registro que desea editar:", list(opciones_movs.keys()))
         id_a_modificar = opciones_movs[mov_seleccionado_str]
 
-        registro_actual = df_modificar[df_modificar["id"] == id_a_modificar].iloc[0]
-        fecha_actual_str = str(registro_actual["fecha_evento"])
+        # Extraer los datos actuales de ese registro
+        row_act = df_modificar[df_modificar["id"] == id_a_modificar].iloc[0]
 
         try:
-            default_date = datetime.datetime.strptime(fecha_actual_str, "%Y-%m-%d").date()
+            default_date = datetime.datetime.strptime(str(row_act["fecha_evento"]), "%Y-%m-%d").date()
         except Exception:
             default_date = datetime.date.today()
 
-        nueva_fecha = st.date_input("Seleccione la nueva fecha para este registro:", value=default_date)
-
-        if st.button("💾 Actualizar Fecha del Registro", type="primary"):
-            nueva_fecha_str = nueva_fecha.strftime("%Y-%m-%d")
+        with st.form(key=f"form_editar_{id_a_modificar}"):
+            st.markdown("##### 📝 Edite los campos necesarios:")
             
-            with engine.begin() as conn:
-                conn.execute(text("""
-                    UPDATE historial_movimientos
-                    SET fecha_evento = :nueva_fecha
-                    WHERE id = :id_mov
-                """), {"nueva_fecha": nueva_fecha_str, "id_mov": int(id_a_modificar)})
+            nueva_fecha_val = st.date_input("Fecha del Registro", value=default_date)
+            
+            c_e1, c_e2, c_e3 = st.columns(3)
+            with c_e1:
+                nuevo_chofer = st.text_input("Nombre del Chófer", value=str(row_act["chofer"]))
+                nuevo_dni = st.text_input("DNI Chófer", value=str(row_act["dni_chofer"]))
+                nuevo_trans = st.text_input("Empresa de Transporte", value=str(row_act["empresa_transporte"]))
+            with c_e2:
+                nueva_placa = st.text_input("Placa del Vehículo", value=str(row_act["placa"]))
+                nueva_guia_e = st.text_input("N° Guía Entrada", value=str(row_act["num_guia_entrada"]))
+                nueva_guia_s = st.text_input("N° Guía Salida", value=str(row_act["num_guia_salida"]))
+            with c_e3:
+                nuevo_cliente = st.text_input("Cliente", value=str(row_act["cliente"]))
+                nuevo_tipo_tela = st.text_input("Tipo de Tela", value=str(row_act["tipo_tela"]))
+                nueva_partida = st.text_input("N° Partida", value=str(row_act["num_partida"]))
 
-                guia_asociada = registro_actual["num_guia_entrada"]
-                if guia_asociada and guia_asociada != "-":
+            c_e4, c_e5 = st.columns(2)
+            with c_e4:
+                nuevos_rollos = st.number_input("Rollos", min_value=1, value=int(row_act["rollos_movimiento"]), step=1)
+            with c_e5:
+                nuevo_peso = st.number_input("Peso (Kg)", min_value=0.1, value=float(row_act["peso_kg_movimiento"]), step=0.1)
+
+            btn_guardar_cambios = st.form_submit_button("💾 Guardar Todos los Cambios", type="primary")
+
+            if btn_guardar_cambios:
+                fecha_nueva_str = nueva_fecha_val.strftime("%Y-%m-%d")
+                
+                with engine.begin() as conn:
+                    # Actualizar en el historial general
                     conn.execute(text("""
-                        UPDATE stock_telas_planta
-                        SET fecha_ingreso = :nueva_fecha
-                        WHERE num_guia_entrada = :guia
-                    """), {"nueva_fecha": nueva_fecha_str, "guia": guia_asociada})
+                        UPDATE historial_movimientos
+                        SET fecha_evento = :fecha,
+                            chofer = :chofer,
+                            dni_chofer = :dni,
+                            empresa_transporte = :trans,
+                            placa = :placa,
+                            num_guia_entrada = :guia_e,
+                            num_guia_salida = :guia_s,
+                            cliente = :cliente,
+                            tipo_tela = :tela,
+                            num_partida = :partida,
+                            rollos_movimiento = :rollos,
+                            peso_kg_movimiento = :peso
+                        WHERE id = :id_mov
+                    """), {
+                        "fecha": fecha_nueva_str,
+                        "chofer": nuevo_chofer.strip(),
+                        "dni": nuevo_dni.strip(),
+                        "trans": nuevo_trans.strip(),
+                        "placa": nueva_placa.strip().upper(),
+                        "guia_e": nueva_guia_e.strip(),
+                        "guia_s": nueva_guia_s.strip(),
+                        "cliente": nuevo_cliente.strip(),
+                        "tela": nuevo_tipo_tela.strip(),
+                        "partida": nueva_partida.strip(),
+                        "rollos": nuevos_rollos,
+                        "peso": nuevo_peso,
+                        "id_mov": int(id_a_modificar)
+                    })
 
-            st.success(f"✅ ¡Fecha actualizada con éxito a **{nueva_fecha_str}** para el registro ID {id_a_modificar}!")
-            st.rerun()
+                st.success(f"✅ ¡Registro ID {id_a_modificar} modificado y actualizado con éxito en la base de datos!")
+                st.rerun()
     else:
         st.info("No hay registros en el historial para modificar.")
